@@ -360,6 +360,13 @@ scene.background = null; renderer.setClearColor(SKY, 1); renderer.autoClear = fa
 scene.fog = new THREE.Fog(SKY, Q.fog[0], Q.fog[1]);
 const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1300);
 scene.add(camera);
+// three r128 ne recompile pas le shader quand une InstancedMesh sans couleur d’instance partage un matériau avec une InstancedMesh colorée :
+// le rendu plante alors (instanceColor null) et la boucle s’arrête. Chaque InstancedMesh reçoit donc un tampon de couleur blanc par défaut.
+const sceneAdd = scene.add.bind(scene);
+scene.add = (...objs) => {
+  for (const o of objs) o.traverse(n => { if (n.isInstancedMesh && !n.instanceColor) n.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n.instanceMatrix.count * 3).fill(1), 3); });
+  return sceneAdd(...objs);
+};
 const hemi = new THREE.HemisphereLight(0xe4ead6, 0x463f2a, 0.86); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffe0b0, 0.95);
 sun.castShadow = true;
@@ -3524,8 +3531,12 @@ window.addEventListener('resize', resize); resize();
 for (const l of [hemi, sun, muzzleLight, boomLight]) l.layers.enable(1);
 renderQualButtons();
 buildStaticScenery(); buildCountryside(); buildPerimeter(); resetWorld(); updateChunks(0, 0, true); makeWeaponImages();
-let last = performance.now();
+let last = performance.now(), loopErr = 0;
 function loop(now) {
+  requestAnimationFrame(loop);
+  try { frameStep(now); } catch (e) { if (loopErr++ < 3) console.error(e); }
+}
+function frameStep(now) {
   const dt = Math.min(0.033, (now - last) / 1000); last = now; frame++;
   let vdt = 0;
   if (state === 'play') {
@@ -3543,7 +3554,6 @@ function loop(now) {
   renderer.clear(); camera.layers.set(0); renderer.render(scene, camera);
   if (vm.visible || CASES.some(c => c.t > 0)) { renderer.shadowMap.autoUpdate = false; renderer.clearDepth(); camera.layers.set(1); renderer.render(scene, camera); camera.layers.set(0); renderer.shadowMap.autoUpdate = true; }
   drawOverlay();
-  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 })();
