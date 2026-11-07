@@ -302,6 +302,7 @@ body.touch.ingame #touchBtns{display:flex}
       <h2 class="title">Tombé au combat</h2>
       <div class="grid-stats" id="overStats"></div>
       <div class="pills" id="overBuild"></div>
+      <div id="overScores"></div>
       <div class="actions">
         <button class="btn primary" id="againBtn">Redéployer</button>
         <button class="btn" id="menuBtn">Menu principal</button>
@@ -311,6 +312,7 @@ body.touch.ingame #touchBtns{display:flex}
 </div>
 
 <script src="three.min.js"></script>
+<script src="https://gamzu.fr/scores.js" defer></script>
 <script>
 (() => {
 'use strict';
@@ -3431,6 +3433,7 @@ function showGameOver() {
   const cells = [['Score', score.toLocaleString('fr-FR') + (rec ? '<span class="newrec">Record</span>' : '')], ['Vague atteinte', wave], ['Éliminations', kills], ['Grade', rankOf(P.level)], ['Survie', fmtTime(time)], ['Record', best.toLocaleString('fr-FR')]];
   $('overStats').innerHTML = cells.map(c => `<div><b>${c[1]}</b><span>${c[0]}</span></div>`).join('');
   $('overBuild').innerHTML = buildSummary();
+  if (window.Gamzu) Gamzu.panneau($('overScores'), 'fz', score);
   show('overScreen');
 }
 function toMenu() {
