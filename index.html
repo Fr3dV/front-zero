@@ -255,7 +255,7 @@ body.touch.ingame #touchBtns{display:flex}
         </div>
       </div>
       <div class="actions">
-        <button class="btn primary" id="startBtn">Déployer</button>
+        <button data-pad="defaut" class="btn primary" id="startBtn">Déployer</button>
         <span class="best">Record : <b id="bestTxt">0</b></span>
       </div>
       <div class="qual">
@@ -286,7 +286,7 @@ body.touch.ingame #touchBtns{display:flex}
       <div class="pills" id="pauseBuild"></div>
       <div class="skins" id="skinBox"></div>
       <div class="actions">
-        <button class="btn primary" id="resumeBtn">Reprendre</button>
+        <button data-pad="defaut" class="btn primary" id="resumeBtn">Reprendre</button>
         <button class="btn" id="restartBtn">Recommencer</button>
         <button class="btn" id="quitBtn">Menu principal</button>
       </div>
@@ -304,7 +304,7 @@ body.touch.ingame #touchBtns{display:flex}
       <div class="pills" id="overBuild"></div>
       <div id="overScores"></div>
       <div class="actions">
-        <button class="btn primary" id="againBtn">Redéployer</button>
+        <button data-pad="defaut" class="btn primary" id="againBtn">Redéployer</button>
         <button class="btn" id="menuBtn">Menu principal</button>
       </div>
     </div>
@@ -313,6 +313,7 @@ body.touch.ingame #touchBtns{display:flex}
 
 <script src="three.min.js"></script>
 <script src="https://gamzu.fr/scores.js" defer></script>
+<script src="https://gamzu.fr/gamzu-pad.js"></script>
 <script>
 (() => {
 'use strict';
@@ -2417,6 +2418,35 @@ function nearestEnemy(x, y, maxD) {
   for (const e of enemies) { if (e.dead) continue; const dd = d2(x, y, e.x, e.y); if (dd < bd) { bd = dd; b = e; } }
   return b;
 }
+/* ---- Manette (gamzu.fr/gamzu-pad.js, optionnel) ---- */
+const PAD = window.GamzuPad || null;
+let padOn = false, padAds = false;
+// stick droit = regard (avec ralentissement sur cible), RT = tir, LT = visée ; appui sur LT : léger recentrage sur l’ennemi proche
+function padLook(dt) {
+  const pa = PAD && PAD.actif ? PAD.axes : null;
+  if (!pa) { if (padOn) { padOn = false; mouse.down = false; mouse.aim = false; padAds = false; } return null; }
+  padOn = true; if (touchMode) setTouch(false);
+  const k = (camera.fov / baseFov) * (aimEnemy ? 0.55 : 1);
+  const rx = pa.rx * Math.abs(pa.rx), ry = pa.ry * Math.abs(pa.ry); // courbe douce : précis au centre, rapide en bout de course
+  yaw += rx * 3.2 * k * dt; pitch = clamp(pitch - ry * 2.3 * k * dt, -0.8, 0.45);
+  mouse.down = pa.rt > 0.3;
+  const ads = pa.lt > 0.3;
+  if (ads && !padAds && !P.veh) {
+    let best = null, bA = 0.3;
+    for (const e of enemies) { if (e.dead) continue; const d = Math.hypot(e.x - P.x, e.y - P.y); if (d > 900) continue; const da = Math.abs(angLerp(0, Math.atan2(e.y - P.y, e.x - P.x) - yaw, 1)); if (da < bA) { bA = da; best = e; } }
+    if (best) yaw = angLerp(yaw, Math.atan2(best.y - P.y, best.x - P.x), 0.6);
+  }
+  mouse.aim = ads; padAds = ads;
+  return pa;
+}
+if (PAD) PAD.init({
+  touches: { A: 'Space', LS: 'Space', B: 'KeyE', X: 'KeyR', Y: 'Tab', RB: 'KeyG', LB: () => { if (state === 'play') cycleWeapon(-1); },
+    GAUCHE: () => { if (state === 'play') cycleWeapon(-1); }, DROITE: () => { if (state === 'play') cycleWeapon(1); },
+    HAUT: 'KeyC', BAS: 'KeyF', RS: 'KeyV', START: 'KeyP' },
+  menu: () => { for (const id of SCREENS) { const el = $(id); if (el.classList.contains('show')) return el; } return null; },
+  retour: () => { if (state === 'pause') togglePause(); },
+  aide: 'Stick gauche se déplacer · stick droit viser · RT tirer · LT épauler<br>A esquive · B véhicule · X recharger · Y / LB arme · RB grenade · Start pause'
+});
 function stickVec(s) {
   let dx = (s.x - s.ox) / 55, dy = (s.y - s.oy) / 55; const l = Math.hypot(dx, dy);
   if (l > 1) { dx /= l; dy /= l; } return { x: dx, y: dy, l: Math.min(1, l) };
@@ -2426,10 +2456,11 @@ function updatePlayer(dt) {
   let ix = 0, iy = 0;
   if (keys.KeyD || keys.ArrowRight) ix += 1; if (keys.KeyA || keys.ArrowLeft) ix -= 1;
   if (keys.KeyS || keys.ArrowDown) iy += 1; if (keys.KeyW || keys.ArrowUp) iy -= 1;
+  const pa = padLook(dt); if (pa) { ix += pa.lx; iy += pa.ly; }
   if (P.veh) {
     const v = P.veh, t = v.t;
     if (stL.id !== null) { const sv = stickVec(stL); ix = sv.x; iy = sv.y; }
-    if (!touchMode && !locked) { const ex = mouse.sx / VW; if (ex < 0.04) yaw -= 2.4 * dt; else if (ex > 0.96) yaw += 2.4 * dt; }
+    if (!touchMode && !locked && !padOn) { const ex = mouse.sx / VW; if (ex < 0.04) yaw -= 2.4 * dt; else if (ex > 0.96) yaw += 2.4 * dt; }
     driveVehicle(v, dt, ix, iy);
     if (!P.veh) return;
     P.x = v.x; P.y = v.y; P.vx = Math.cos(v.ang) * v.spd; P.vy = Math.sin(v.ang) * v.spd; P.moving = false;
@@ -2449,7 +2480,7 @@ function updatePlayer(dt) {
   }
   if (stL.id !== null) { const v = stickVec(stL); ix = v.x; iy = v.y; }
   const il = Math.hypot(ix, iy); if (il > 1) { ix /= il; iy /= il; }
-  if (!touchMode && !locked) { const ex = mouse.sx / VW; if (ex < 0.04) yaw -= 2.4 * dt; else if (ex > 0.96) yaw += 2.4 * dt; }
+  if (!touchMode && !locked && !padOn) { const ex = mouse.sx / VW; if (ex < 0.04) yaw -= 2.4 * dt; else if (ex > 0.96) yaw += 2.4 * dt; }
   const cfx = Math.cos(yaw), cfy = Math.sin(yaw);
   P.inX = cfx * (-iy) - cfy * ix; P.inY = cfy * (-iy) + cfx * ix;
   const spd = 235 * S.speedMul * (adsK > 0.5 ? 0.65 : 1);
@@ -2536,7 +2567,7 @@ function hurtPlayer(dmg, sx, sy) {
   if (state !== 'play' || P.inv > 0) return;
   if (P.veh) { const v = P.veh; v.hp -= dmg * (v.t.armor || 1); P.hurtFlash = 0.12; shake(3); Sfx.hit(false); hurtDirs.push({ a: Math.atan2(sy - P.y, sx - P.x), t: 0.8 }); if (v.hp <= 0) destroyVehicle(v); return; }
   dmg *= Math.max(0.6, 1 - S.armor);
-  P.hp -= dmg; P.inv = 0.35; P.hurtFlash = 0.35; shake(7); Sfx.hurt();
+  P.hp -= dmg; P.inv = 0.35; P.hurtFlash = 0.35; shake(7); Sfx.hurt(); if (PAD) PAD.vibrer(140, 0.55);
   hurtDirs.push({ a: Math.atan2(sy - P.y, sx - P.x), t: 1 }); if (hurtDirs.length > 6) hurtDirs.shift();
   addFloater(P.x, P.y, 3, '-' + Math.round(dmg), '#ff6b5b', 16);
   const d = Math.hypot(P.x - sx, P.y - sy) || 1; P.vx += (P.x - sx) / d * 240; P.vy += (P.y - sy) / d * 240;
@@ -2544,6 +2575,7 @@ function hurtPlayer(dmg, sx, sy) {
   if (P.hp <= 0) playerDie();
 }
 function playerDie() {
+  if (PAD) PAD.vibrer(600, 1);
   state = 'dying'; deathT = 1.6; P.hp = 0; mouse.down = false; Sfx.engineOff(); if (P.veh) { P.veh.occupied = false; P.veh = null; } document.body.classList.remove('inveh');
   bloodFx(P.x, P.y, 1.2, 26); stampBlood(P.x, P.y, 30);
   setFlash(playerObj, false); playerObj.root.visible = true;
